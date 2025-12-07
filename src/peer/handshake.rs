@@ -105,7 +105,6 @@ impl Handshake {
     }
 
     /// Attempts to perform a handshake with a peer, connecting first if needed.
-    /// Convenience method that combines connection and handshake in one call.
     pub fn connect_and_handshake(
         peer: &Peer,
         info_hash: &[u8; 20],

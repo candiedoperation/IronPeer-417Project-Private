@@ -11,7 +11,11 @@ impl MessageEncoder {
     pub fn encode(message: &Message) -> Vec<u8> {
         let payload_len = message.payload_len();
         let id = message.id();
-        let total_len = if id.is_some() { 1 + payload_len } else { payload_len };
+        let total_len = if id.is_some() {
+            1 + payload_len
+        } else {
+            payload_len
+        };
 
         let mut buf = Vec::with_capacity(4 + total_len);
 
@@ -33,17 +37,29 @@ impl MessageEncoder {
             Message::Bitfield { bits } => {
                 buf.extend_from_slice(bits);
             }
-            Message::Request { index, begin, length } => {
+            Message::Request {
+                index,
+                begin,
+                length,
+            } => {
                 buf.extend_from_slice(&index.to_be_bytes());
                 buf.extend_from_slice(&begin.to_be_bytes());
                 buf.extend_from_slice(&length.to_be_bytes());
             }
-            Message::Piece { index, begin, block } => {
+            Message::Piece {
+                index,
+                begin,
+                block,
+            } => {
                 buf.extend_from_slice(&index.to_be_bytes());
                 buf.extend_from_slice(&begin.to_be_bytes());
                 buf.extend_from_slice(block);
             }
-            Message::Cancel { index, begin, length } => {
+            Message::Cancel {
+                index,
+                begin,
+                length,
+            } => {
                 buf.extend_from_slice(&index.to_be_bytes());
                 buf.extend_from_slice(&begin.to_be_bytes());
                 buf.extend_from_slice(&length.to_be_bytes());
@@ -66,9 +82,7 @@ pub struct MessageDecoder {
 impl MessageDecoder {
     /// Creates a new message decoder.
     pub fn new() -> Self {
-        Self {
-            buffer: Vec::new(),
-        }
+        Self { buffer: Vec::new() }
     }
 
     /// Reads and decodes the next complete message from the connection.
@@ -78,7 +92,7 @@ impl MessageDecoder {
         &mut self,
         reader: &mut R,
     ) -> Result<Option<Message>, Box<dyn std::error::Error>> {
-        // Ensure we have at least 4 bytes for length prefix
+        // gotta ensure we have at least 4 bytes for length prefix
         while self.buffer.len() < 4 {
             let mut temp = [0u8; 1024];
             match reader.read(&mut temp) {
@@ -100,7 +114,12 @@ impl MessageDecoder {
         }
 
         // Read length prefix
-        let len_bytes = [self.buffer[0], self.buffer[1], self.buffer[2], self.buffer[3]];
+        let len_bytes = [
+            self.buffer[0],
+            self.buffer[1],
+            self.buffer[2],
+            self.buffer[3],
+        ];
         let message_len = u32::from_be_bytes(len_bytes) as usize;
         self.buffer.drain(0..4);
 
@@ -117,7 +136,7 @@ impl MessageDecoder {
                 Ok(0) => return Err("Connection closed while reading message".into()),
                 Ok(n) => self.buffer.extend_from_slice(&temp[..n]),
                 Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                    // Partial read, put length prefix back and return
+                    // Partial read, js put len prefix back and return
                     let mut restored = len_bytes.to_vec();
                     restored.extend_from_slice(&self.buffer);
                     self.buffer = restored;
@@ -153,11 +172,9 @@ impl MessageDecoder {
                 let piece_index = u32::from_be_bytes([data[0], data[1], data[2], data[3]]);
                 Message::Have { piece_index }
             }
-            5 => {
-                Message::Bitfield {
-                    bits: data.to_vec(),
-                }
-            }
+            5 => Message::Bitfield {
+                bits: data.to_vec(),
+            },
             6 => {
                 if data.len() < 12 {
                     return Err("Request message too short".into());
@@ -165,7 +182,11 @@ impl MessageDecoder {
                 let index = u32::from_be_bytes([data[0], data[1], data[2], data[3]]);
                 let begin = u32::from_be_bytes([data[4], data[5], data[6], data[7]]);
                 let length = u32::from_be_bytes([data[8], data[9], data[10], data[11]]);
-                Message::Request { index, begin, length }
+                Message::Request {
+                    index,
+                    begin,
+                    length,
+                }
             }
             7 => {
                 if data.len() < 8 {
@@ -174,7 +195,11 @@ impl MessageDecoder {
                 let index = u32::from_be_bytes([data[0], data[1], data[2], data[3]]);
                 let begin = u32::from_be_bytes([data[4], data[5], data[6], data[7]]);
                 let block = data[8..].to_vec();
-                Message::Piece { index, begin, block }
+                Message::Piece {
+                    index,
+                    begin,
+                    block,
+                }
             }
             8 => {
                 if data.len() < 12 {
@@ -183,7 +208,11 @@ impl MessageDecoder {
                 let index = u32::from_be_bytes([data[0], data[1], data[2], data[3]]);
                 let begin = u32::from_be_bytes([data[4], data[5], data[6], data[7]]);
                 let length = u32::from_be_bytes([data[8], data[9], data[10], data[11]]);
-                Message::Cancel { index, begin, length }
+                Message::Cancel {
+                    index,
+                    begin,
+                    length,
+                }
             }
             9 => {
                 if data.len() < 2 {
@@ -204,4 +233,3 @@ impl Default for MessageDecoder {
         Self::new()
     }
 }
-

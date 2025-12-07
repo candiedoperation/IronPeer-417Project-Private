@@ -47,17 +47,15 @@ impl TrackerClient {
         Self { peer_id, port }
     }
 
-    /// Creates a tracker client with a peer ID generated from a UUIDv4.
-    /// The UUID is hashed with SHA1 to produce a consistent 20-byte peer ID.
-    /// In the future, this UUID can be saved to a config file for persistence.
+    /// by default we're gonna do a random peer id for the client instance
     pub fn with_default_peer_id(port: u16) -> Self {
-        let peer_id = Self::generate_peer_id_from_uuid();
+        let peer_id = Self::generate_random_peerid();
         Self::new(peer_id, port)
     }
 
-    /// Generates a 20-byte peer ID using Azureus-style format: -IP0100-<random>
+    /// Generates a 20-byte peer ID using in the format: -IP0100-<random>
     /// IP = IronPeer, 0100 = v0.1.0
-    fn generate_peer_id_from_uuid() -> [u8; 20] {
+    fn generate_random_peerid() -> [u8; 20] {
         use rand::Rng;
         let mut peer_id = [0u8; 20];
 
@@ -105,8 +103,6 @@ impl TrackerClient {
     }
 
     /// Constructs the tracker announce URL with all required query parameters.
-    /// Manually constructs the query string to avoid double-encoding of binary fields.
-    /// The url crate's query_pairs would encode our already-encoded binary data.
     fn build_announce_url(
         &self,
         announce_url: &str,
@@ -116,7 +112,7 @@ impl TrackerClient {
     ) -> Result<Url, Box<dyn std::error::Error>> {
         let mut url = Url::parse(announce_url)?;
 
-        // Manually construct query string to avoid double-encoding binary data
+        // Manually construct query str to avoid issue w double-enocding binary data
         let mut query_parts = Vec::new();
         query_parts.push(format!("info_hash={}", self.url_encode_bytes(info_hash)));
         query_parts.push(format!("peer_id={}", self.url_encode_bytes(&self.peer_id)));

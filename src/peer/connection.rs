@@ -33,7 +33,6 @@ impl PeerConnection {
     }
 
     /// Creates a connection from an already-established TcpStream.
-    /// Useful for incoming connections (if implementing server functionality).
     pub fn from_stream(stream: TcpStream, peer: Peer) -> Result<Self, Box<dyn std::error::Error>> {
         stream.set_nodelay(true)?;
         Ok(Self {
@@ -69,7 +68,7 @@ impl PeerConnection {
         &self.stream
     }
 
-    /// Gets a mutable reference to the underlying TcpStream.
+    /// Gets a mutable reference to the underlying TcpStream (prolly use it later idk? kept for reference)
     #[allow(dead_code)]
     pub fn stream_mut(&mut self) -> &mut TcpStream {
         &mut self.stream

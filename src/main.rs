@@ -172,7 +172,7 @@ fn main() {
                                     std::thread::spawn(move || {
                                         if let Ok(addr) = stream.peer_addr() {
                                             // Create Peer struct for incoming connection
-                                            // We don't know the peer_id yet, but that's fine
+                                            // peer id is unknow atp but we're good anyways
                                             let peer = crate::structs::peer::Peer {
                                                 addr,
                                             };
@@ -292,8 +292,8 @@ fn main() {
                     
                     for tracker_url in &tracker_urls {
                         if tracker_url.starts_with("udp://") {
-                            // UDP trackers don't have a separate "completed" event in the same way
-                            // Just continue with regular announces
+                            // afaik UDP trackers don't support completed event so, 
+                            // we're just gonna announce as usual
                         } else {
                             // HTTP tracker - send completed event
                             if let Ok(_) = tracker_client.announce(

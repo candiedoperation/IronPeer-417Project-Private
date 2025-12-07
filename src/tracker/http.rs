@@ -4,10 +4,6 @@ use std::net::TcpStream;
 use std::sync::Arc;
 use url::Url;
 
-/// A simple, blocking HTTP client for tracker communication.
-/// Implements basic GET requests using raw TCP sockets to avoid external HTTP libraries.
-/// Supports both HTTP and HTTPS (via rustls).
-/// https://wiki.theory.org/BitTorrentSpecification#Tracker_HTTP.2FHTTPS_Protocol
 pub struct HttpClient;
 
 impl HttpClient {
@@ -44,7 +40,7 @@ impl HttpClient {
                 let addr = format!("{}:{}", host, port);
                 let mut sock = TcpStream::connect(&addr)?;
 
-                // Configure TLS
+                // Configure TLS (we're using the rustls external lib for this)
                 let root_store = rustls::RootCertStore::from_iter(
                     webpki_roots::TLS_SERVER_ROOTS.iter().cloned(),
                 );

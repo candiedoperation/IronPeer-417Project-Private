@@ -52,7 +52,6 @@ impl FileManager {
         let mut current_offset = global_offset;
         let mut remaining_data = data;
 
-        // Real implementation:
         let mut file_start_offset = 0;
         for file_info in &self.files {
             let file_end_offset = file_start_offset + file_info.length;
@@ -61,7 +60,7 @@ impl FileManager {
                 // This file contains at least part of the block
                 let file_path = self.output_dir.join(&file_info.path);
 
-                // Ensure parent directories exist
+                // recusive create dir so we can make sure parent dirs exist as we move forward
                 if let Some(parent) = file_path.parent() {
                     std::fs::create_dir_all(parent)?;
                 }
@@ -113,11 +112,8 @@ impl FileManager {
             if current_offset < file_end_offset
                 && (current_offset + (buffer.len() - buf_offset) as u64) > file_start_offset
             {
-                // Overlap
                 let file_path = self.output_dir.join(&file_info.path);
                 if !file_path.exists() {
-                    // If file doesn't exist, we can't read it. Return error or zeros?
-                    // For verification, missing file means invalid piece.
                     return Err(std::io::Error::new(
                         std::io::ErrorKind::NotFound,
                         "File missing",

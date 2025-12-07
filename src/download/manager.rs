@@ -90,7 +90,8 @@ impl PieceManager {
         if self.piece_status[index] != PieceStatus::Complete {
             self.piece_status[index] = PieceStatus::Complete;
             self.pieces_complete += 1;
-            // Remove from downloading
+
+            // we gotta remove this from downloading qeue
             self.downloading_pieces.retain(|p| p.index != index);
         }
     }
@@ -100,9 +101,9 @@ impl PieceManager {
         peer_have: &[bool],
         availability: &[u16],
     ) -> Option<usize> {
-        // Rarest-First Strategy:
-        // Find missing pieces that the peer has.
-        // Sort them by availability (rarity).
+        // gonna use the rarest-first strategy here:
+        // Find missing pieces that the peer has,
+        // Sort them by availability (rarity),
         // Pick the rarest one.
 
         let mut candidates: Vec<usize> = self
@@ -120,9 +121,8 @@ impl PieceManager {
         }
 
         // Sort by availability (ascending) -> rarest first
-        // If availability is equal, random or sequential (stable sort preserves order)
+        // If availability is equal, we rely on the stable sort preservnig the order
         candidates.sort_by_key(|&i| availability.get(i).copied().unwrap_or(0));
-
         Some(candidates[0])
     }
 
@@ -139,9 +139,7 @@ impl PieceManager {
     }
 
     pub fn reset_piece(&mut self, index: usize) {
-        // Reset piece to missing status so it can be retried
         self.piece_status[index] = PieceStatus::Missing;
-        // Remove from downloading pieces
         self.downloading_pieces.retain(|p| p.index != index);
     }
 
@@ -228,16 +226,15 @@ impl DownloadManager {
         self.peers.push(ActivePeer::new(connection, num_pieces));
     }
 
+    // we gotta verify the existing pieces to avoid wasting time on pieces we already have
     pub fn verify_existing_pieces(&mut self, file_manager: &FileManager) -> usize {
         let mut verified_count = 0;
         println!("Verifying existing data...");
 
         for i in 0..self.piece_manager.total_pieces {
             if i < self.piece_hashes.len() {
-                let hash = &self.piece_hashes[i];
                 // We only verify if we can read the piece (file exists)
-                // FileManager::verify_piece handles reading.
-                // If file is missing, it returns error/false.
+                let hash = &self.piece_hashes[i];
                 match file_manager.verify_piece(i, hash) {
                     Ok(true) => {
                         self.piece_manager.piece_status[i] = PieceStatus::Complete;
@@ -250,7 +247,7 @@ impl DownloadManager {
                 }
             }
 
-            // Optional: Print progress for large files
+            // print the verificatino progress to keep usr updated
             if i % 100 == 0 && i > 0 {
                 print!(
                     "\rVerified {}/{} pieces",
@@ -264,6 +261,7 @@ impl DownloadManager {
             "\rVerification complete: {}/{} pieces found.",
             verified_count, self.piece_manager.total_pieces
         );
+
         verified_count
     }
 
@@ -294,7 +292,7 @@ impl DownloadManager {
                 Ok(Some(msg)) => {
                     match msg {
                         Message::Choke => {
-                            // println!("Peer choked us");
+                            // println!("Peer choked us");   // tmp log to check choke stats
                             peer.peer_choking = true;
                         }
                         Message::Unchoke => {
@@ -449,7 +447,7 @@ impl DownloadManager {
 
             // 4. Request blocks
             if !peer.peer_choking && peer.am_interested && peer.inflight_requests < 10 {
-                // Find a block to request
+                // we gotta choose from two optoins:
                 // 1. Continue current pieces
                 // 2. Start new piece
 
