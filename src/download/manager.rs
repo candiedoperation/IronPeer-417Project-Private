@@ -193,6 +193,7 @@ pub struct DownloadManager {
     pub peers: Vec<ActivePeer>,
     pub piece_manager: PieceManager,
     pub peer_id: [u8; 20],
+    #[allow(dead_code)]
     pub info_hash: [u8; 20],
     pub piece_hashes: Vec<[u8; 20]>,
     pub unchoked_peers: usize, // Track how many peers we're uploading to (max 5)
@@ -419,8 +420,8 @@ impl DownloadManager {
                     }
                 }
                 Ok(None) => {}
-                Err(e) => {
-                    // eprintln!("Peer error: {}", e);
+                Err(_e) => {
+                    // eprintln!("Peer error: {}", _e);
                     peers_to_remove.push(i);
                 }
             }

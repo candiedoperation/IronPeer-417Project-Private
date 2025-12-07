@@ -52,30 +52,6 @@ impl FileManager {
         let mut current_offset = global_offset;
         let mut remaining_data = data;
 
-        for file_info in &self.files {
-            // Calculate file bounds in global space
-            // We need to know the start offset of this file.
-            // Since we don't store it, we have to calculate it or store it in TorrentFile.
-            // For now, let's assume we iterate and track offset.
-            // Wait, TorrentFile has `start_piece` but not byte offset.
-            // Let's recalculate offsets on the fly or improve TorrentFile.
-            // Actually, let's just iterate all files until we find the right one.
-            // Optimization: Store global offset in TorrentFile or FileManager.
-            // For this MVP, I'll calculate it.
-
-            // NOTE: This is inefficient for many files, but fine for MVP.
-            // Better: Pre-calculate file offsets.
-            // Let's assume we can calculate it.
-
-            // Actually, let's just use a helper that finds the file(s) for a range.
-            // But I can't easily do that without storing offsets.
-            // Let's just iterate.
-
-            // Wait, I can't easily know the file start offset without summing previous files.
-            // I'll implement a helper to get file + offset for a global offset.
-            break; // Placeholder
-        }
-
         // Real implementation:
         let mut file_start_offset = 0;
         for file_info in &self.files {

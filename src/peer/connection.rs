@@ -1,8 +1,11 @@
+use crate::protocol::{
+    codec::{MessageDecoder, MessageEncoder},
+    messages::Message,
+};
+use crate::structs::peer::Peer;
 use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::time::Duration;
-use crate::structs::peer::Peer;
-use crate::protocol::{messages::Message, codec::{MessageEncoder, MessageDecoder}};
 
 /// Manages a TCP connection to a BitTorrent peer.
 /// Handles connection establishment, timeouts, and basic I/O operations.
@@ -21,7 +24,7 @@ impl PeerConnection {
         stream.set_read_timeout(Some(timeout))?;
         stream.set_write_timeout(Some(timeout))?;
         stream.set_nodelay(true)?;
-        
+
         Ok(Self {
             stream,
             peer: peer.clone(),
@@ -67,6 +70,7 @@ impl PeerConnection {
     }
 
     /// Gets a mutable reference to the underlying TcpStream.
+    #[allow(dead_code)]
     pub fn stream_mut(&mut self) -> &mut TcpStream {
         &mut self.stream
     }
@@ -91,4 +95,3 @@ impl PeerConnection {
         self.decoder.read_message(&mut self.stream)
     }
 }
-

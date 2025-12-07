@@ -20,41 +20,31 @@ pub enum Message {
     NotInterested,
     /// Have message: <len=0005><id=4><piece index>
     /// Peer announces it has completed a piece.
-    Have {
-        piece_index: u32,
-    },
+    Have { piece_index: u32 },
     /// Bitfield message: <len=0001+X><id=5><bitfield>
     /// Peer sends its bitfield indicating which pieces it has.
     /// Bitfield is a bit array where each bit represents a piece (1 = has, 0 = doesn't have).
-    Bitfield {
-        bits: Vec<u8>,
-    },
+    Bitfield { bits: Vec<u8> },
     /// Request message: <len=0013><id=6><index><begin><length>
     /// Request a block of data from a piece.
     Request {
-        index: u32,   // Piece index
-        begin: u32,   // Byte offset within piece
-        length: u32,  // Block length (typically 16KB)
+        index: u32,  // Piece index
+        begin: u32,  // Byte offset within piece
+        length: u32, // Block length (typically 16KB)
     },
     /// Piece message: <len=0009+X><id=7><index><begin><block>
     /// Peer sends a block of data we requested.
     Piece {
-        index: u32,   // Piece index
-        begin: u32,   // Byte offset within piece
+        index: u32,     // Piece index
+        begin: u32,     // Byte offset within piece
         block: Vec<u8>, // Block data
     },
     /// Cancel message: <len=0013><id=8><index><begin><length>
     /// Cancel a previous request (used in end-game mode).
-    Cancel {
-        index: u32,
-        begin: u32,
-        length: u32,
-    },
+    Cancel { index: u32, begin: u32, length: u32 },
     /// Port message: <len=0003><id=9><listen-port>
     /// DHT port announcement (for DHT support).
-    Port {
-        listen_port: u16,
-    },
+    Port { listen_port: u16 },
 }
 
 impl Message {
@@ -89,10 +79,10 @@ impl Message {
     }
 
     /// Returns the total message length (4 bytes length + 1 byte ID + payload).
+    #[allow(dead_code)]
     pub fn total_len(&self) -> usize {
         let payload = self.payload_len();
         let id_len = if self.id().is_some() { 1 } else { 0 };
         4 + id_len + payload
     }
 }
-

@@ -1,10 +1,11 @@
-use serde::{Deserialize, Serialize};
 use crate::structs::peer::Peer;
+use serde::{Deserialize, Serialize};
 
 /// Bencoded dictionary returned by tracker in response to an announce request.
 /// Contains peer list, statistics, and re-announce interval information.
 /// https://wiki.theory.org/BitTorrentSpecification#Tracker_Response
 #[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
 pub struct TrackerResponse {
     #[serde(rename = "warning message")]
     pub warning_message: Option<String>,
@@ -78,16 +79,14 @@ impl TrackerResponse {
                 }
                 peers
             }
-            PeerList::NonCompact(peer_dicts) => {
-                peer_dicts
-                    .iter()
-                    .filter_map(|p| {
-                        p.ip.parse::<std::net::IpAddr>()
-                            .ok()
-                            .map(|ip| Peer::new(ip, p.port))
-                    })
-                    .collect()
-            }
+            PeerList::NonCompact(peer_dicts) => peer_dicts
+                .iter()
+                .filter_map(|p| {
+                    p.ip.parse::<std::net::IpAddr>()
+                        .ok()
+                        .map(|ip| Peer::new(ip, p.port))
+                })
+                .collect(),
         }
     }
 }
@@ -138,4 +137,3 @@ impl<'de> serde::Deserialize<'de> for PeerList {
         deserializer.deserialize_any(PeerListVisitor)
     }
 }
-

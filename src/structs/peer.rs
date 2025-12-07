@@ -33,10 +33,12 @@ impl Peer {
         }
     }
 
+    #[allow(dead_code)]
     pub fn ip(&self) -> IpAddr {
         self.addr.ip()
     }
 
+    #[allow(dead_code)]
     pub fn port(&self) -> u16 {
         self.addr.port()
     }

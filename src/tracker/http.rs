@@ -1,27 +1,24 @@
+use rustls::pki_types::ServerName;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpStream;
+use std::sync::Arc;
 use url::Url;
 
 /// A simple, blocking HTTP client for tracker communication.
 /// Implements basic GET requests using raw TCP sockets to avoid external HTTP libraries.
+/// Supports both HTTP and HTTPS (via rustls).
 /// https://wiki.theory.org/BitTorrentSpecification#Tracker_HTTP.2FHTTPS_Protocol
 pub struct HttpClient;
 
 impl HttpClient {
     /// Sends an HTTP GET request to the specified URL and returns the response body bytes.
-    /// Handles DNS resolution, TCP connection, request formatting, and basic response parsing.
+    /// Handles DNS resolution, TCP connection, TLS handshake (if HTTPS), request formatting, and basic response parsing.
     pub fn get(url_str: &str) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
         let url = Url::parse(url_str)?;
-
         let host = url.host_str().ok_or("Missing host in URL")?;
-        let port = url.port().unwrap_or(80);
+        let scheme = url.scheme();
 
-        // 1. Connect to the server
-        let addr = format!("{}:{}", host, port);
-        let mut stream = TcpStream::connect(&addr)?;
-
-        // 2. Construct HTTP request
-        // Note: We must include the query string in the path
+        // Construct HTTP request
         let path = url.path();
         let query = url.query().map(|q| format!("?{}", q)).unwrap_or_default();
         let request_path = if path.is_empty() { "/" } else { path };
@@ -35,10 +32,45 @@ impl HttpClient {
             request_path, query, host
         );
 
-        // 3. Send request
+        match scheme {
+            "http" => {
+                let port = url.port().unwrap_or(80);
+                let addr = format!("{}:{}", host, port);
+                let mut stream = TcpStream::connect(&addr)?;
+                Self::perform_request(&mut stream, &request)
+            }
+            "https" => {
+                let port = url.port().unwrap_or(443);
+                let addr = format!("{}:{}", host, port);
+                let mut sock = TcpStream::connect(&addr)?;
+
+                // Configure TLS
+                let root_store = rustls::RootCertStore::from_iter(
+                    webpki_roots::TLS_SERVER_ROOTS.iter().cloned(),
+                );
+
+                let config = rustls::ClientConfig::builder()
+                    .with_root_certificates(root_store)
+                    .with_no_client_auth();
+
+                let server_name = ServerName::try_from(host)?.to_owned();
+                let mut conn = rustls::ClientConnection::new(Arc::new(config), server_name)?;
+                let mut stream = rustls::Stream::new(&mut conn, &mut sock);
+
+                Self::perform_request(&mut stream, &request)
+            }
+            _ => Err(format!("Unsupported scheme: {}", scheme).into()),
+        }
+    }
+
+    fn perform_request<S: Read + Write>(
+        stream: &mut S,
+        request: &str,
+    ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+        // Send request
         stream.write_all(request.as_bytes())?;
 
-        // 4. Read response
+        // Read response
         let mut reader = BufReader::new(stream);
         let mut status_line = String::new();
         reader.read_line(&mut status_line)?;

@@ -15,6 +15,7 @@ pub struct ClientStats {
 /// Used to signal when download starts, completes, or stops. None is used for periodic updates.
 /// https://wiki.theory.org/BitTorrentSpecification#Tracker_Request_Parameters
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
 pub enum AnnounceEvent {
     Started,
     Completed,
@@ -151,6 +152,7 @@ impl TrackerClient {
 /// Announces to multiple tracker URLs and aggregates unique peers from all responses.
 /// Uses a HashSet to deduplicate peers by their socket address, ensuring each peer
 /// appears only once in the final list even if multiple trackers return the same peer.
+#[allow(dead_code)]
 pub fn announce_to_trackers(
     client: &TrackerClient,
     tracker_urls: &[String],

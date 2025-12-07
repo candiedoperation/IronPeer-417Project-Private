@@ -4,6 +4,7 @@ use crate::structs::peer::Peer;
 /// Result of a successful handshake containing the peer's ID.
 #[derive(Debug, Clone)]
 pub struct HandshakeResult {
+    #[allow(dead_code)]
     pub peer_id: [u8; 20],
 }
 
@@ -69,7 +70,8 @@ impl Handshake {
         if handshake[0] != Self::PROTOCOL_STRING_LEN {
             return Err(format!(
                 "Invalid protocol length: expected {}, got {}",
-                Self::PROTOCOL_STRING_LEN, handshake[0]
+                Self::PROTOCOL_STRING_LEN,
+                handshake[0]
             )
             .into());
         }
@@ -115,4 +117,3 @@ impl Handshake {
         Ok((connection, result))
     }
 }
-
