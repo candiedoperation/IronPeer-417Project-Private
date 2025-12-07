@@ -17,8 +17,8 @@ pub struct PeerConnection {
 }
 
 impl PeerConnection {
-    /// Establishes a TCP connection to the peer with a timeout.
-    /// Returns an error if connection fails or times out.
+    /// this makes a TCP connection to the peer with a timeout
+    /// and returns an error if connection fails or times out.
     pub fn connect(peer: &Peer, timeout: Duration) -> Result<Self, Box<dyn std::error::Error>> {
         let stream = std::net::TcpStream::connect_timeout(&peer.addr, timeout)?;
         stream.set_read_timeout(Some(timeout))?;
@@ -42,8 +42,8 @@ impl PeerConnection {
         })
     }
 
-    /// Reads exactly `len` bytes from the connection.
-    /// Blocks until all bytes are received or an error occurs.
+    /// reads exactly `len` bytes from the connection.
+    /// blocks until all bytes are received or an error occurs.
     pub fn read_exact(&mut self, buf: &mut [u8]) -> Result<(), Box<dyn std::error::Error>> {
         let mut total_read = 0;
         while total_read < buf.len() {
@@ -56,40 +56,39 @@ impl PeerConnection {
         Ok(())
     }
 
-    /// Writes all bytes to the connection.
-    /// Blocks until all bytes are sent or an error occurs.
+    /// Writes all bytes to the connection
+    /// blocks until all bytes are sent or an error occurs
     pub fn write_all(&mut self, buf: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
         self.stream.write_all(buf)?;
         Ok(())
     }
 
-    /// Gets a reference to the underlying TcpStream for advanced operations.
+    /// gets a reference to the underlying TcpStream for advanced operations
     pub fn stream(&self) -> &TcpStream {
         &self.stream
     }
 
-    /// Gets a mutable reference to the underlying TcpStream (prolly use it later idk? kept for reference)
+    /// gets a mutable reference to the underlying TcpStream (prolly use it later idk? kept for reference)
     #[allow(dead_code)]
     pub fn stream_mut(&mut self) -> &mut TcpStream {
         &mut self.stream
     }
 
-    /// Gets the peer address this connection is connected to.
+    /// gets the peer address this connection is connected to.
     pub fn peer(&self) -> &Peer {
         &self.peer
     }
 
-    /// Sends a BitTorrent protocol message to the peer.
-    /// Encodes the message and writes it to the connection.
+    /// Sends a BitTorrent protocol message through the connection.
+    /// encodes the message and writes it to the connection.
     pub fn send_message(&mut self, message: &Message) -> Result<(), Box<dyn std::error::Error>> {
         let encoded = MessageEncoder::encode(message);
         self.write_all(&encoded)?;
         Ok(())
     }
 
-    /// Reads the next complete message from the peer.
-    /// Returns None if no complete message is available yet (non-blocking).
-    /// Returns Some(Ok(message)) on success, Some(Err) on protocol error.
+    /// reads the next complete msg from peer
+    /// returns None if no complete msg is available yet
     pub fn read_message(&mut self) -> Result<Option<Message>, Box<dyn std::error::Error>> {
         self.decoder.read_message(&mut self.stream)
     }

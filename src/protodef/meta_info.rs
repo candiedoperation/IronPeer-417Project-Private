@@ -58,16 +58,15 @@ impl MetaInfo {
         Ok(meta_info)
     }
 
-    /// Converts the MetaInfo (protocol format) into TorrentInfo (internal representation).
-    /// Calculates piece hashes, file offsets, and tracker lists for efficient client use.
+    /// convert MetaInfo (protocol format) into TorrentInfo
     pub fn to_torrent_info(&self) -> TorrentInfo {
-        let info_hash = compute_info_hash(&self.info); // see below
+        let info_hash = compute_info_hash(&self.info); // info_hash is SHA1 of info dict
         let piece_length = self.info.piece_length;
         let num_pieces = self.info.pieces.len() / 20;
         let mut files = Vec::new();
         let mut trackers = Vec::new();
         if let Some(ref tiers) = self.announce_list {
-            trackers.extend(tiers.iter().cloned());
+            trackers.extend(tiers.iter().cloned()); // flatten tiers into trackers
         } else {
             trackers.push(vec![self.announce.clone()]);
         }

@@ -21,9 +21,7 @@ impl Handshake {
     const RESERVED_BYTES: [u8; 8] = [0; 8];
     const HANDSHAKE_LEN: usize = 1 + 19 + 8 + 20 + 20; // 68 bytes (protocol_len + protocol + reserved + info_hash + peer_id)
 
-    /// Performs a BitTorrent handshake with a peer.
-    /// Sends our handshake and validates the peer's response.
-    /// Returns the peer's ID if handshake succeeds and info_hash matches.
+    /// performs a BitTorrent handshake with a peer
     pub fn perform(
         connection: &mut PeerConnection,
         info_hash: &[u8; 20],
@@ -32,14 +30,13 @@ impl Handshake {
         // Send handshake
         Self::send_handshake(connection, info_hash, our_peer_id)?;
 
-        // Receive and validate handshake
+        // validate
         let peer_id = Self::receive_handshake(connection, info_hash)?;
 
         Ok(HandshakeResult { peer_id })
     }
 
-    /// Sends the BitTorrent handshake to the peer.
-    /// Format: [protocol_len][protocol_string][reserved][info_hash][peer_id]
+    /// sends the BitTorrent handshake to the peer
     fn send_handshake(
         connection: &mut PeerConnection,
         info_hash: &[u8; 20],
@@ -56,9 +53,8 @@ impl Handshake {
         Ok(())
     }
 
-    /// Receives and validates the peer's handshake response.
-    /// Verifies protocol string, reserved bytes, and info_hash match.
-    /// Returns the peer's ID if validation succeeds.
+    /// receives and validates the peer's handshake response.
+    /// returns the peer's ID if validation succeeds.
     fn receive_handshake(
         connection: &mut PeerConnection,
         expected_info_hash: &[u8; 20],
@@ -76,18 +72,16 @@ impl Handshake {
             .into());
         }
 
-        // Validate protocol string
+            // Validate protocol string
         let protocol_start = 1;
         let protocol_end = protocol_start + Self::PROTOCOL_STRING_LEN as usize;
         if &handshake[protocol_start..protocol_end] != Self::PROTOCOL_STRING {
             return Err("Invalid protocol string".into());
         }
 
-        // Reserved bytes are at positions 20-27 (skip validation, accept any)
         let reserved_start = protocol_end;
         let reserved_end = reserved_start + 8;
 
-        // Validate info_hash (must match exactly)
         let info_hash_start = reserved_end;
         let info_hash_end = info_hash_start + 20;
         let received_info_hash = &handshake[info_hash_start..info_hash_end];
@@ -95,7 +89,7 @@ impl Handshake {
             return Err("Info hash mismatch - peer is not for this torrent".into());
         }
 
-        // Extract peer_id
+        // extract peer_id
         let peer_id_start = info_hash_end;
         let peer_id_end = peer_id_start + 20;
         let mut peer_id = [0u8; 20];

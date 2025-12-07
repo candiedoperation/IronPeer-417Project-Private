@@ -4,8 +4,6 @@ use std::fs::{File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::PathBuf;
 
-/// Manages file I/O for the torrent.
-/// Handles reading/writing blocks to the correct file(s) and verifying piece hashes.
 pub struct FileManager {
     pub output_dir: PathBuf,
     pub files: Vec<TorrentFile>,
@@ -25,10 +23,10 @@ impl FileManager {
         }
     }
 
-    /// Calculate the actual length of a piece (last piece may be smaller)
+    /// calculate the acc length of a piece (last piece may be smaller !imp)
     fn get_piece_length(&self, piece_index: usize) -> u64 {
         if piece_index == self.total_pieces - 1 {
-            // Last piece
+            // last piece
             let remainder = self.total_size % self.piece_length;
             if remainder == 0 {
                 self.piece_length
@@ -40,8 +38,8 @@ impl FileManager {
         }
     }
 
-    /// Writes a block of data to the appropriate file(s).
-    /// A block might span across two files.
+    /// writes a block of data to the appropriate file(s)
+    /// a block might span across two files
     pub fn write_block(
         &self,
         piece_index: usize,
@@ -57,7 +55,7 @@ impl FileManager {
             let file_end_offset = file_start_offset + file_info.length;
 
             if current_offset >= file_start_offset && current_offset < file_end_offset {
-                // This file contains at least part of the block
+                // ths file contains at least part of the block
                 let file_path = self.output_dir.join(&file_info.path);
 
                 // recusive create dir so we can make sure parent dirs exist as we move forward
@@ -94,9 +92,9 @@ impl FileManager {
         Ok(())
     }
 
-    /// Reads a full piece from disk for verification.
+    /// reads a full piece from disk for verification.
     pub fn read_piece(&self, piece_index: usize) -> Result<Vec<u8>, std::io::Error> {
-        // Calculate the actual length of this piece
+        // calculate the acc length of this piece
         let piece_len = self.get_piece_length(piece_index);
 
         let mut buffer = vec![0u8; piece_len as usize];
@@ -173,7 +171,7 @@ impl FileManager {
         begin: u32,
         length: usize,
     ) -> Result<Vec<u8>, std::io::Error> {
-        // Read a specific block from a piece (for uploading)
+        // Read a specific block from a piece (for upl)
         let piece_data = self.read_piece(piece_index)?;
         let begin = begin as usize;
 

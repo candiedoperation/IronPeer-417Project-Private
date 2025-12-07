@@ -16,15 +16,15 @@ pub enum Message {
         bits: Vec<u8>,
     },
     Request {
-        index: u32,  // Piece index
-        begin: u32,  // Byte offset within piece
-        length: u32, // Block length (typically 16KB)
+        index: u32,
+        begin: u32,
+        length: u32,
     },
 
     Piece {
-        index: u32,     // Piece index
-        begin: u32,     // Byte offset within piece
-        block: Vec<u8>, // Block data
+        index: u32,
+        begin: u32,
+        block: Vec<u8>,
     },
 
     Cancel {
@@ -38,7 +38,7 @@ pub enum Message {
 }
 
 impl Message {
-    /// Returns the message ID for encoding.
+    /// returns the msg ID for encoding
     pub fn id(&self) -> Option<u8> {
         match self {
             Message::KeepAlive => None,
@@ -55,7 +55,7 @@ impl Message {
         }
     }
 
-    /// Returns the payload length (excluding length prefix and message ID).
+    /// returns payload length (excluding length prefix and message ID)
     pub fn payload_len(&self) -> usize {
         match self {
             Message::KeepAlive => 0,
@@ -68,7 +68,7 @@ impl Message {
         }
     }
 
-    /// Returns the total message length (4 bytes length + 1 byte ID + payload).
+    /// returns the total msg length (4 bytes len + 1 byte ID + pl)
     #[allow(dead_code)]
     pub fn total_len(&self) -> usize {
         let payload = self.payload_len();

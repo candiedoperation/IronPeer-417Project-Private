@@ -59,11 +59,10 @@ impl TrackerClient {
         use rand::Rng;
         let mut peer_id = [0u8; 20];
 
-        // Azureus-style prefix: -IP0100-
         let prefix = b"-IP0100-";
         peer_id[0..8].copy_from_slice(prefix);
 
-        // Fill the rest with random bytes
+        // fill the rest with random bytes
         let mut rng = rand::thread_rng();
         for i in 8..20 {
             peer_id[i] = rng.gen();
@@ -89,12 +88,12 @@ impl TrackerClient {
         let tracker_response: TrackerResponse = serde_bencode::from_bytes(&body)
             .map_err(|e| format!("Failed to parse tracker response: {}", e))?;
 
-        // Check for error response from tracker
+        // check for error
         if let Some(ref reason) = tracker_response.failure_reason {
             return Err(format!("Tracker error: {}", reason).into());
         }
 
-        // Validate required fields for success response
+        // validate
         if tracker_response.interval == 0 && tracker_response.is_empty() {
             return Err("Invalid tracker response: missing interval and peers".into());
         }

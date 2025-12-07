@@ -3,7 +3,7 @@ use std::path::PathBuf;
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 pub struct TorrentInfo {
-    pub info_hash: [u8; 20],
+    pub info_hash: [u8; 20], // SHA1("info" dict)
     pub name: String,
     pub total_size: u64,
     pub piece_length: u64,
@@ -20,7 +20,7 @@ pub struct TorrentInfo {
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 pub struct TorrentFile {
-    pub path: PathBuf,
+    pub path: PathBuf, // relative to torrent root
     pub length: u64,
     pub start_piece: usize,
     pub end_piece: usize,

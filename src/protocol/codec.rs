@@ -7,7 +7,7 @@ use std::io::Read;
 pub struct MessageEncoder;
 
 impl MessageEncoder {
-    /// Encodes a message into a byte vector ready for transmission.
+    /// encodes message into a byte vector ready for transmission
     pub fn encode(message: &Message) -> Vec<u8> {
         let payload_len = message.payload_len();
         let id = message.id();
@@ -19,10 +19,10 @@ impl MessageEncoder {
 
         let mut buf = Vec::with_capacity(4 + total_len);
 
-        // Length prefix (4 bytes, big-endian)
+        // length prefix (4 bytes, big-endian)
         buf.extend_from_slice(&(total_len as u32).to_be_bytes());
 
-        // Message ID (1 byte, except for keep-alive)
+        // message ID
         if let Some(id) = id {
             buf.push(id);
         }
@@ -80,7 +80,6 @@ pub struct MessageDecoder {
 }
 
 impl MessageDecoder {
-    /// Creates a new message decoder.
     pub fn new() -> Self {
         Self { buffer: Vec::new() }
     }
@@ -98,16 +97,16 @@ impl MessageDecoder {
             match reader.read(&mut temp) {
                 Ok(0) => {
                     if self.buffer.is_empty() {
-                        return Ok(None); // Connection closed, no data
+                        return Ok(None); // conn closed here
                     }
                     return Err("Connection closed with incomplete message".into());
                 }
                 Ok(n) => self.buffer.extend_from_slice(&temp[..n]),
                 Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
                     if self.buffer.len() < 4 {
-                        return Ok(None); // Need more data
+                        return Ok(None); // need more data
                     }
-                    break; // We have enough
+                    break; // we have enough
                 }
                 Err(e) => return Err(Box::new(e)),
             }
@@ -123,12 +122,11 @@ impl MessageDecoder {
         let message_len = u32::from_be_bytes(len_bytes) as usize;
         self.buffer.drain(0..4);
 
-        // Keep-alive message
         if message_len == 0 {
             return Ok(Some(Message::KeepAlive));
         }
 
-        // Read message payload (ID + data)
+        // read msg payload (ID + data)
         while self.buffer.len() < message_len {
             let needed = message_len - self.buffer.len();
             let mut temp = vec![0u8; needed.min(1024)];

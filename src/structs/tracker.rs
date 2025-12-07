@@ -54,9 +54,7 @@ impl TrackerResponse {
         }
     }
 
-    /// Extracts and parses peer addresses from the tracker response.
-    /// Handles both compact (binary) and non-compact (dictionary list) formats.
-    /// For compact format, attempts IPv4 parsing first (6 bytes) then falls back to IPv6 (18 bytes).
+    /// extracts and parses peer addresses from the tracker response.
     pub fn parse_peers(&self) -> Vec<Peer> {
         match &self.peers {
             PeerList::Compact(data) => {

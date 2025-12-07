@@ -43,8 +43,7 @@ impl Peer {
         self.addr.port()
     }
 
-    /// Parses multiple peers from compact binary format.
-    /// Used for UDP tracker responses where all peers are in compact format.
+    /// parses multiple peers from compact binary format.
     pub fn from_compact_bytes(data: &[u8]) -> Result<Vec<Self>, Box<dyn std::error::Error>> {
         let mut peers = Vec::new();
         let mut offset = 0;

@@ -217,7 +217,7 @@ impl DownloadManager {
     pub fn add_peer(&mut self, mut connection: PeerConnection) {
         let num_pieces = self.piece_manager.piece_status.len();
 
-        // Send bitfield to tell peer what pieces we have
+        // send bitfield to tell peer what pieces we have
         let bitfield = self.piece_manager.get_bitfield();
         if let Err(_) = connection.send_message(&Message::Bitfield { bits: bitfield }) {
             return; // Failed to send bitfield, don't add peer
@@ -349,7 +349,6 @@ impl DownloadManager {
 
                                 // Check if piece is complete
                                 if piece_state.downloaded_count == piece_state.blocks.len() {
-                                    // Verify
                                     if (index as usize) < self.piece_hashes.len() {
                                         let hash = &self.piece_hashes[index as usize];
                                         match file_manager.verify_piece(index as usize, hash) {
@@ -434,8 +433,8 @@ impl DownloadManager {
 
             // 3. Manage interest
             if !peer.am_interested {
-                // If peer has something we need, get interested
-                // For simplicity, always be interested if we are not done
+                // if peer has something we need, get interested
+                // by default, be interested if we are not done
                 if !self.piece_manager.is_complete() {
                     if let Err(_) = peer.connection.send_message(&Message::Interested) {
                         peers_to_remove.push(i);
@@ -453,9 +452,9 @@ impl DownloadManager {
 
                 let mut request_made = false;
 
-                // Try to find a block in currently downloading pieces
+                // try to find block in currently downloading pieces
                 for piece_state in &mut self.piece_manager.downloading_pieces {
-                    // Check if peer has this piece
+                    // check if peer has this piece
                     if peer
                         .have_pieces
                         .get(piece_state.index)
@@ -463,13 +462,12 @@ impl DownloadManager {
                         .unwrap_or(false)
                     {
                         for block in &mut piece_state.blocks {
-                            // Check if we already asked THIS peer for this block
                             let already_asked_peer =
                                 peer.requested_blocks.contains(&(block.index, block.begin));
 
                             if !block.downloaded && !already_asked_peer {
-                                // In normal mode, we request if nobody else requested it (!block.requested).
-                                // In endgame mode, we request even if someone else requested it,
+                                // In normal mode, request if nobody else did
+                                // In endgame mode, request even if someone else did,
                                 // as long as WE haven't asked THIS peer yet.
                                 if endgame || !block.requested {
                                     if let Ok(_) = peer.connection.send_message(&Message::Request {
@@ -493,7 +491,6 @@ impl DownloadManager {
                 }
 
                 if !request_made && peer.inflight_requests < 10 && !endgame {
-                    // Start a new piece
                     if let Some(index) = self
                         .piece_manager
                         .get_next_needed_piece(&peer.have_pieces, &piece_availability)
@@ -523,19 +520,17 @@ impl DownloadManager {
             }
         }
 
-        // Remove dead peers (in reverse order to maintain indices)
+        // remove dead peers (in reverse)
         for i in peers_to_remove.into_iter().rev() {
             self.peers.remove(i);
         }
 
-        // Broadcast Have messages for completed pieces
         for piece_index in completed_pieces {
             self.broadcast_have(piece_index);
         }
     }
 
     fn broadcast_have(&mut self, piece_index: u32) {
-        // Send Have message to all peers
         let msg = Message::Have { piece_index };
         for peer in &mut self.peers {
             let _ = peer.connection.send_message(&msg);
