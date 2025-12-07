@@ -54,18 +54,22 @@ impl TrackerClient {
         Self::new(peer_id, port)
     }
 
-    /// Generates a 20-byte peer ID by hashing a UUIDv4 with SHA1.
-    /// Creates a new UUIDv4 each time, which can later be persisted to config.
+    /// Generates a 20-byte peer ID using Azureus-style format: -IP0100-<random>
+    /// IP = IronPeer, 0100 = v0.1.0
     fn generate_peer_id_from_uuid() -> [u8; 20] {
-        use sha1::{Digest, Sha1};
-        use uuid::Uuid;
-
-        let uuid = Uuid::new_v4();
-        let mut hasher = Sha1::new();
-        hasher.update(uuid.as_bytes());
-        let hash = hasher.finalize();
+        use rand::Rng;
         let mut peer_id = [0u8; 20];
-        peer_id.copy_from_slice(&hash);
+
+        // Azureus-style prefix: -IP0100-
+        let prefix = b"-IP0100-";
+        peer_id[0..8].copy_from_slice(prefix);
+
+        // Fill the rest with random bytes
+        let mut rng = rand::thread_rng();
+        for i in 8..20 {
+            peer_id[i] = rng.gen();
+        }
+
         peer_id
     }
 
