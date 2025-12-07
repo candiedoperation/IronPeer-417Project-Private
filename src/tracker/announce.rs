@@ -1,5 +1,5 @@
+use crate::structs::{peer::Peer, tracker::TrackerResponse};
 use url::Url;
-use crate::structs::{tracker::TrackerResponse, peer::Peer};
 
 /// Tracks client statistics sent to tracker during announce requests.
 /// These values are used by trackers to maintain swarm statistics and determine
@@ -59,7 +59,7 @@ impl TrackerClient {
     fn generate_peer_id_from_uuid() -> [u8; 20] {
         use sha1::{Digest, Sha1};
         use uuid::Uuid;
-        
+
         let uuid = Uuid::new_v4();
         let mut hasher = Sha1::new();
         hasher.update(uuid.as_bytes());
@@ -80,15 +80,9 @@ impl TrackerClient {
         event: AnnounceEvent,
     ) -> Result<TrackerResponse, Box<dyn std::error::Error>> {
         let url = self.build_announce_url(announce_url, info_hash, stats, event)?;
-        
-        let response = reqwest::blocking::get(url.as_str())?;
-        
-        if !response.status().is_success() {
-            return Err(format!("Tracker returned error: {}", response.status()).into());
-        }
 
-        let body = response.bytes()?;
-        
+        let body = crate::tracker::http::HttpClient::get(url.as_str())?;
+
         let tracker_response: TrackerResponse = serde_bencode::from_bytes(&body)
             .map_err(|e| format!("Failed to parse tracker response: {}", e))?;
 
@@ -116,7 +110,7 @@ impl TrackerClient {
         event: AnnounceEvent,
     ) -> Result<Url, Box<dyn std::error::Error>> {
         let mut url = Url::parse(announce_url)?;
-        
+
         // Manually construct query string to avoid double-encoding binary data
         let mut query_parts = Vec::new();
         query_parts.push(format!("info_hash={}", self.url_encode_bytes(info_hash)));
@@ -126,15 +120,15 @@ impl TrackerClient {
         query_parts.push(format!("downloaded={}", stats.downloaded));
         query_parts.push(format!("left={}", stats.left));
         query_parts.push("compact=1".to_string());
-        
+
         if let Some(event_str) = event.as_str() {
             query_parts.push(format!("event={}", event_str));
         }
-        
+
         query_parts.push("numwant=50".to_string());
-        
+
         url.set_query(Some(&query_parts.join("&")));
-        
+
         Ok(url)
     }
 
@@ -142,9 +136,7 @@ impl TrackerClient {
     /// Required for info_hash and peer_id parameters since they contain arbitrary binary data
     /// that must be safely transmitted in HTTP query strings. Each byte becomes %XX.
     fn url_encode_bytes(&self, bytes: &[u8]) -> String {
-        bytes.iter()
-            .map(|&b| format!("%{:02X}", b))
-            .collect()
+        bytes.iter().map(|&b| format!("%{:02X}", b)).collect()
     }
 
     pub fn peer_id(&self) -> &[u8; 20] {
@@ -183,4 +175,3 @@ pub fn announce_to_trackers(
 
     all_peers
 }
-
