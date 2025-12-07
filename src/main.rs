@@ -7,7 +7,6 @@ mod structs;
 mod tracker;
 
 use crate::peer::handshake::Handshake;
-use crate::protocol::messages::Message;
 use crate::protodef::meta_info::MetaInfo;
 use crate::tracker::announce::{AnnounceEvent, ClientStats, TrackerClient};
 use std::path::PathBuf;
@@ -15,7 +14,7 @@ use std::time::Duration;
 
 fn main() {
     let torrent_path =
-        PathBuf::from("/Users/atheesh/Downloads/ubuntu-25.10-desktop-amd64.iso.torrent");
+        PathBuf::from("/Users/atheesh/Downloads/raspios-2025-12-04-trixie-arm64.img.xz.torrent");
     let output_dir = PathBuf::from("downloads");
 
     match MetaInfo::from_file(&torrent_path) {
@@ -52,9 +51,9 @@ fn main() {
                     AnnounceEvent::Started,
                 ) {
                     peers.extend(response.parse_peers());
-                    if !peers.is_empty() {
+                    if peers.len() >= 50 {
                         break;
-                    } // Found peers, good enough for now
+                    }
                 }
             }
 
@@ -63,141 +62,58 @@ fn main() {
                 return;
             }
 
-            println!(
-                "Found {} peers. Connecting to the first one...",
-                peers.len()
-            );
-            let peer = &peers[0];
+            println!("Found {} peers. Connecting to up to 10...", peers.len());
 
-            match Handshake::connect_and_handshake(
-                peer,
-                &torrent_info.info_hash,
-                &download_manager.peer_id,
-                Duration::from_secs(5),
-            ) {
-                Ok((mut connection, _)) => {
-                    println!("Connected to {}", peer.addr);
+            // Connect to peers
+            let mut connected_count = 0;
+            for peer in peers {
+                if connected_count >= 10 {
+                    break;
+                }
 
-                    if let Err(e) = connection.send_message(&Message::Interested) {
-                        eprintln!("Failed to send Interested: {}", e);
-                        return;
+                println!("Connecting to {}", peer.addr);
+                match Handshake::connect_and_handshake(
+                    &peer,
+                    &torrent_info.info_hash,
+                    &download_manager.peer_id,
+                    Duration::from_secs(3),
+                ) {
+                    Ok((mut connection, _)) => {
+                        println!("Connected to {}", peer.addr);
+                        // Set non-blocking for event loop
+                        if let Err(e) = connection.stream().set_nonblocking(true) {
+                            eprintln!("Failed to set non-blocking: {}", e);
+                            continue;
+                        }
+                        download_manager.add_peer(connection);
+                        connected_count += 1;
                     }
-
-                    let mut choked = true;
-                    let mut current_piece_idx = 0;
-
-                    loop {
-                        // Read messages
-                        match connection.read_message() {
-                            Ok(Some(msg)) => {
-                                match msg {
-                                    Message::Unchoke => {
-                                        println!("Unchoked!");
-                                        choked = false;
-                                    }
-                                    Message::Choke => {
-                                        println!("Choked!");
-                                        choked = true;
-                                    }
-                                    Message::Piece {
-                                        index,
-                                        begin,
-                                        block,
-                                    } => {
-                                        // Write block
-                                        if let Err(e) =
-                                            file_manager.write_block(index as usize, begin, &block)
-                                        {
-                                            eprintln!("Failed to write block: {}", e);
-                                        }
-
-                                        // Simple logic: assume we requested this.
-                                        // In real impl, we'd track requests.
-                                        // For now, let's just check if we have the full piece?
-                                        // No, we need to track blocks.
-                                        // But for this MVP loop, let's just request blocks sequentially.
-                                    }
-                                    _ => {}
-                                }
-                            }
-                            Ok(None) => {} // No message
-                            Err(e) => {
-                                eprintln!("Connection error: {}", e);
-                                break;
-                            }
-                        }
-
-                        if !choked && current_piece_idx < torrent_info.num_pieces {
-                            // Request blocks for current piece
-                            // This is blocking and naive, but demonstrates logic.
-                            // We need to request blocks.
-                            // Let's use PieceDownload logic from manager?
-                            // Or just manually request for now.
-
-                            let piece_len = torrent_info.piece_length(current_piece_idx);
-                            let mut offset = 0;
-                            while offset < piece_len {
-                                let len = std::cmp::min(16384, piece_len - offset);
-                                if let Err(e) = connection.send_message(&Message::Request {
-                                    index: current_piece_idx as u32,
-                                    begin: offset as u32,
-                                    length: len as u32,
-                                }) {
-                                    eprintln!("Failed to request block: {}", e);
-                                    break;
-                                }
-                                offset += len;
-
-                                // Wait for piece message (synchronous for this test)
-                                // This is very slow but safe.
-                                // Real impl needs pipelining.
-                                loop {
-                                    match connection.read_message() {
-                                        Ok(Some(Message::Piece {
-                                            index,
-                                            begin,
-                                            block,
-                                        })) => {
-                                            file_manager
-                                                .write_block(index as usize, begin, &block)
-                                                .unwrap();
-                                            break; // Got the block
-                                        }
-                                        Ok(Some(msg)) => {
-                                            println!("Received {:?} while waiting for piece", msg)
-                                        }
-                                        Ok(None) => {}
-                                        Err(e) => panic!("Error: {}", e),
-                                    }
-                                }
-                            }
-
-                            println!("Downloaded piece {}", current_piece_idx);
-                            // Verify
-                            if let Some(hash) = torrent_info.piece_hash(current_piece_idx) {
-                                if file_manager
-                                    .verify_piece(current_piece_idx, hash)
-                                    .unwrap_or(false)
-                                {
-                                    println!("Piece {} verified!", current_piece_idx);
-                                    download_manager
-                                        .piece_manager
-                                        .mark_complete(current_piece_idx);
-                                } else {
-                                    println!("Piece {} verification failed!", current_piece_idx);
-                                }
-                            }
-
-                            current_piece_idx += 1;
-                        } else if current_piece_idx >= torrent_info.num_pieces {
-                            println!("Download complete!");
-                            break;
-                        }
+                    Err(e) => {
+                        // eprintln!("Failed to connect to {}: {}", peer.addr, e);
                     }
                 }
-                Err(e) => eprintln!("Handshake failed: {}", e),
+            }
+
+            println!(
+                "Connected to {} peers. Starting download loop...",
+                connected_count
+            );
+
+            loop {
+                download_manager.tick(&file_manager);
+
+                if download_manager.piece_manager.is_complete() {
+                    println!("Download complete!");
+                    break;
+                }
+
+                // Sleep a bit to avoid busy loop
+                std::thread::sleep(Duration::from_millis(10));
             }
         }
-        Err(e) => eprintln!("Error: {}", e),
+        Err(e) => {
+            eprintln!("Error parsing torrent file: {}", e);
+            std::process::exit(1);
+        }
     }
 }
