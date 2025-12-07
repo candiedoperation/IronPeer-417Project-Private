@@ -57,6 +57,9 @@ fn main() {
             let file_manager = crate::storage::files::FileManager::new(output_dir, &torrent_info);
             let mut download_manager = crate::download::manager::DownloadManager::new(&torrent_info, *TrackerClient::with_default_peer_id(6881).peer_id());
             
+            // Verify existing data on disk
+            download_manager.verify_existing_pieces(&file_manager);
+            
             // Tracker announce
             let tracker_client = TrackerClient::new(download_manager.peer_id, 6881);
             let udp_client = crate::tracker::udp::UdpTrackerClient::new().ok();
@@ -148,11 +151,76 @@ fn main() {
                     }
                 });
             }
+
+            // Start TCP Listener for incoming connections
+            let listener_tx = conn_tx.clone();
+            let listener_info_hash = torrent_info.info_hash.clone();
+            let listener_peer_id = download_manager.peer_id.clone();
+            
+            std::thread::spawn(move || {
+                let listener = std::net::TcpListener::bind("0.0.0.0:6881");
+                match listener {
+                    Ok(l) => {
+                        println!("Listening for incoming connections on 0.0.0.0:6881");
+                        for stream in l.incoming() {
+                            match stream {
+                                Ok(stream) => {
+                                    let tx = listener_tx.clone();
+                                    let info_hash = listener_info_hash.clone();
+                                    let peer_id = listener_peer_id.clone();
+                                    
+                                    std::thread::spawn(move || {
+                                        if let Ok(addr) = stream.peer_addr() {
+                                            // Create Peer struct for incoming connection
+                                            // We don't know the peer_id yet, but that's fine
+                                            let peer = crate::structs::peer::Peer {
+                                                addr,
+                                            };
+                                            
+                                            match crate::peer::connection::PeerConnection::from_stream(stream, peer) {
+                                                Ok(mut connection) => {
+                                                    // Perform handshake
+                                                    match Handshake::perform(&mut connection, &info_hash, &peer_id) {
+                                                        Ok(_) => {
+                                                            if let Ok(_) = connection.stream().set_nonblocking(true) {
+                                                                let _ = tx.send(connection);
+                                                            }
+                                                        }
+                                                        Err(e) => {
+                                                            if is_debug() {
+                                                                println!("Handshake failed with incoming peer {}: {}", addr, e);
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                                Err(e) => {
+                                                    if is_debug() {
+                                                        println!("Failed to create connection from stream {}: {}", addr, e);
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    });
+                                }
+                                Err(e) => {
+                                    if is_debug() {
+                                        println!("Error accepting connection: {}", e);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("Failed to bind TCP listener: {}", e);
+                    }
+                }
+            });
             
             let mut last_log_time = std::time::Instant::now();
             let mut peer_index = initial_batch_size;
             let mut last_downloaded_bytes = 0;
             let mut last_speed_calc_time = std::time::Instant::now();
+            let mut announced_completed = false;
 
             loop {
                 // 1. Check for new connections from background threads (non-blocking)
@@ -211,13 +279,40 @@ fn main() {
                 // 3. Tick download manager
                 download_manager.tick(&file_manager);
                 
-                // 3. Check completion
-                if download_manager.piece_manager.is_complete() {
-                    println!("\nDownload complete!");
-                    break;
+                // 4. Check completion and announce
+                if download_manager.piece_manager.is_complete() && !announced_completed {
+                    println!("\n✓ Download complete! Announcing to trackers and continuing to seed...");
+                    
+                    // Announce completion to all trackers
+                    let completed_stats = ClientStats {
+                        uploaded: 0, // TODO: track actual uploaded bytes
+                        downloaded: torrent_info.total_size,
+                        left: 0,
+                    };
+                    
+                    for tracker_url in &tracker_urls {
+                        if tracker_url.starts_with("udp://") {
+                            // UDP trackers don't have a separate "completed" event in the same way
+                            // Just continue with regular announces
+                        } else {
+                            // HTTP tracker - send completed event
+                            if let Ok(_) = tracker_client.announce(
+                                tracker_url,
+                                &torrent_info.info_hash,
+                                &completed_stats,
+                                AnnounceEvent::Completed,
+                            ) {
+                                if is_debug() {
+                                    println!("Announced completion to {}", tracker_url);
+                                }
+                            }
+                        }
+                    }
+                    
+                    announced_completed = true;
                 }
                 
-                // 4. Log progress
+                // 5. Log progress
                 if last_log_time.elapsed() >= Duration::from_secs(1) {
                     let completed_pieces = download_manager.piece_manager.pieces_complete;
                     let downloaded_bytes = completed_pieces as u64 * torrent_info.piece_length; // Approximate
@@ -237,14 +332,22 @@ fn main() {
                     last_speed_calc_time = now;
 
                     // Clear line and print progress
-                    print!("\rProgress: [{:<50}] {:.2}% ({}/{} MB) - Speed: {:.2} MB/s - Peers: {}    ", 
-                        "=".repeat((percentage / 2.0) as usize),
-                        percentage, 
-                        downloaded_bytes / 1_000_000, 
-                        total_bytes / 1_000_000,
-                        speed / 1_000_000.0,
-                        download_manager.peers.len()
-                    );
+                    if announced_completed {
+                        print!("\r🌱 Seeding: 100% ({}/{} MB) - Peers: {} - Press Ctrl+C to stop    ", 
+                            downloaded_bytes / 1_000_000, 
+                            total_bytes / 1_000_000,
+                            download_manager.peers.len()
+                        );
+                    } else {
+                        print!("\rProgress: [{:<20}] {:.2}% ({}/{} MB) - Speed: {:.2} Mb/s - Peers: {}    ", 
+                            "=".repeat((percentage / 5.0) as usize),
+                            percentage, 
+                            downloaded_bytes / 1_000_000, 
+                            total_bytes / 1_000_000,
+                            (speed / 1_000_000.0) * 8.0,
+                            download_manager.peers.len()
+                        );
+                    }
                     use std::io::Write;
                     std::io::stdout().flush().unwrap();
                     

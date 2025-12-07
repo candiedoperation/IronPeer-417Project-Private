@@ -194,4 +194,24 @@ impl FileManager {
         let hash_bytes: [u8; 20] = hash.into();
         Ok(&hash_bytes == expected_hash)
     }
+
+    pub fn read_block(
+        &self,
+        piece_index: usize,
+        begin: u32,
+        length: usize,
+    ) -> Result<Vec<u8>, std::io::Error> {
+        // Read a specific block from a piece (for uploading)
+        let piece_data = self.read_piece(piece_index)?;
+        let begin = begin as usize;
+
+        if begin + length > piece_data.len() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "Block request out of bounds",
+            ));
+        }
+
+        Ok(piece_data[begin..begin + length].to_vec())
+    }
 }

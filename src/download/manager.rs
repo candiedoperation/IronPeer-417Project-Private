@@ -95,14 +95,35 @@ impl PieceManager {
         }
     }
 
-    pub fn get_next_needed_piece(&mut self, peer_have: &[bool]) -> Option<usize> {
-        // Simple strategy: First missing piece that the peer has
-        for (i, status) in self.piece_status.iter().enumerate() {
-            if *status == PieceStatus::Missing && peer_have.get(i).copied().unwrap_or(false) {
-                return Some(i);
-            }
+    pub fn get_next_needed_piece(
+        &mut self,
+        peer_have: &[bool],
+        availability: &[u16],
+    ) -> Option<usize> {
+        // Rarest-First Strategy:
+        // Find missing pieces that the peer has.
+        // Sort them by availability (rarity).
+        // Pick the rarest one.
+
+        let mut candidates: Vec<usize> = self
+            .piece_status
+            .iter()
+            .enumerate()
+            .filter(|(i, status)| {
+                **status == PieceStatus::Missing && peer_have.get(*i).copied().unwrap_or(false)
+            })
+            .map(|(i, _)| i)
+            .collect();
+
+        if candidates.is_empty() {
+            return None;
         }
-        None
+
+        // Sort by availability (ascending) -> rarest first
+        // If availability is equal, random or sequential (stable sort preserves order)
+        candidates.sort_by_key(|&i| availability.get(i).copied().unwrap_or(0));
+
+        Some(candidates[0])
     }
 
     pub fn start_downloading(&mut self, index: usize) {
@@ -122,6 +143,22 @@ impl PieceManager {
         self.piece_status[index] = PieceStatus::Missing;
         // Remove from downloading pieces
         self.downloading_pieces.retain(|p| p.index != index);
+    }
+
+    pub fn get_bitfield(&self) -> Vec<u8> {
+        // Create bitfield representing which pieces we have
+        let num_bytes = (self.total_pieces + 7) / 8;
+        let mut bitfield = vec![0u8; num_bytes];
+
+        for (i, status) in self.piece_status.iter().enumerate() {
+            if *status == PieceStatus::Complete {
+                let byte_index = i / 8;
+                let bit_index = 7 - (i % 8);
+                bitfield[byte_index] |= 1 << bit_index;
+            }
+        }
+
+        bitfield
     }
 }
 
@@ -153,40 +190,100 @@ impl ActivePeer {
 
 /// Orchestrates the download process, managing peers and piece requests.
 pub struct DownloadManager {
-    pub piece_manager: PieceManager,
     pub peers: Vec<ActivePeer>,
-    pub info_hash: [u8; 20],
+    pub piece_manager: PieceManager,
     pub peer_id: [u8; 20],
+    pub info_hash: [u8; 20],
     pub piece_hashes: Vec<[u8; 20]>,
+    pub unchoked_peers: usize, // Track how many peers we're uploading to (max 5)
 }
 
 impl DownloadManager {
     pub fn new(torrent_info: &TorrentInfo, peer_id: [u8; 20]) -> Self {
+        let piece_manager = PieceManager::new(
+            torrent_info.num_pieces,
+            torrent_info.piece_length,
+            torrent_info.total_size,
+        );
         Self {
-            piece_manager: PieceManager::new(
-                torrent_info.num_pieces,
-                torrent_info.piece_length,
-                torrent_info.total_size,
-            ),
             peers: Vec::new(),
-            info_hash: torrent_info.info_hash,
+            piece_manager,
             peer_id,
+            info_hash: torrent_info.info_hash,
             piece_hashes: torrent_info.piece_hashes.clone(),
+            unchoked_peers: 0,
         }
     }
 
-    pub fn add_peer(&mut self, connection: PeerConnection) {
-        let num_pieces = self.piece_manager.total_pieces;
+    pub fn add_peer(&mut self, mut connection: PeerConnection) {
+        let num_pieces = self.piece_manager.piece_status.len();
+
+        // Send bitfield to tell peer what pieces we have
+        let bitfield = self.piece_manager.get_bitfield();
+        if let Err(_) = connection.send_message(&Message::Bitfield { bits: bitfield }) {
+            return; // Failed to send bitfield, don't add peer
+        }
+
         self.peers.push(ActivePeer::new(connection, num_pieces));
+    }
+
+    pub fn verify_existing_pieces(&mut self, file_manager: &FileManager) -> usize {
+        let mut verified_count = 0;
+        println!("Verifying existing data...");
+
+        for i in 0..self.piece_manager.total_pieces {
+            if i < self.piece_hashes.len() {
+                let hash = &self.piece_hashes[i];
+                // We only verify if we can read the piece (file exists)
+                // FileManager::verify_piece handles reading.
+                // If file is missing, it returns error/false.
+                match file_manager.verify_piece(i, hash) {
+                    Ok(true) => {
+                        self.piece_manager.piece_status[i] = PieceStatus::Complete;
+                        self.piece_manager.pieces_complete += 1;
+                        verified_count += 1;
+                    }
+                    _ => {
+                        // Not complete or error, leave as Missing
+                    }
+                }
+            }
+
+            // Optional: Print progress for large files
+            if i % 100 == 0 && i > 0 {
+                print!(
+                    "\rVerified {}/{} pieces",
+                    i, self.piece_manager.total_pieces
+                );
+                use std::io::Write;
+                std::io::stdout().flush().unwrap();
+            }
+        }
+        println!(
+            "\rVerification complete: {}/{} pieces found.",
+            verified_count, self.piece_manager.total_pieces
+        );
+        verified_count
     }
 
     pub fn tick(&mut self, file_manager: &FileManager) {
         let mut peers_to_remove = Vec::new();
+        let mut completed_pieces: Vec<u32> = Vec::new(); // Track completed pieces to broadcast
         let endgame = self
             .piece_manager
             .piece_status
             .iter()
             .all(|s| *s != PieceStatus::Missing);
+
+        // Calculate piece availability (for rarest-first)
+        let mut piece_availability = vec![0u16; self.piece_manager.total_pieces];
+        for peer in &self.peers {
+            for (i, has_piece) in peer.have_pieces.iter().enumerate() {
+                if *has_piece && i < piece_availability.len() {
+                    piece_availability[i] = piece_availability[i].saturating_add(1);
+                }
+            }
+        }
 
         for i in 0..self.peers.len() {
             let peer = &mut self.peers[i];
@@ -262,7 +359,10 @@ impl DownloadManager {
                                                     println!("Piece {} verified!", index);
                                                 }
                                                 self.piece_manager.mark_complete(index as usize);
-                                            }
+
+                                                // Collect piece index to broadcast later
+                                                completed_pieces.push(index);
+                                            } // Reuse for completed pieces
                                             Ok(false) => {
                                                 eprintln!(
                                                     "Piece {} verification failed! Retrying...",
@@ -279,6 +379,42 @@ impl DownloadManager {
                                 }
                             }
                         }
+                        Message::Request {
+                            index,
+                            begin,
+                            length,
+                        } => {
+                            // Handle upload request from peer
+                            if !peer.am_choking {
+                                // Read the block from disk
+                                match file_manager.read_block(
+                                    index as usize,
+                                    begin,
+                                    length as usize,
+                                ) {
+                                    Ok(block) => {
+                                        // Send the block to the peer
+                                        if let Err(_) =
+                                            peer.connection.send_message(&Message::Piece {
+                                                index,
+                                                begin,
+                                                block,
+                                            })
+                                        {
+                                            peers_to_remove.push(i);
+                                        }
+                                    }
+                                    Err(e) => {
+                                        if crate::is_debug() {
+                                            eprintln!("Failed to read block for upload: {}", e);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        Message::Interested => {
+                            peer.peer_interested = true;
+                        }
                         _ => {}
                     }
                 }
@@ -289,7 +425,15 @@ impl DownloadManager {
                 }
             }
 
-            // 2. Manage interest
+            // 2. Manage choking (simple algorithm: unchoke up to 5 peers)
+            if peer.peer_interested && peer.am_choking && self.unchoked_peers < 5 {
+                if let Ok(_) = peer.connection.send_message(&Message::Unchoke) {
+                    peer.am_choking = false;
+                    self.unchoked_peers += 1;
+                }
+            }
+
+            // 3. Manage interest
             if !peer.am_interested {
                 // If peer has something we need, get interested
                 // For simplicity, always be interested if we are not done
@@ -302,7 +446,7 @@ impl DownloadManager {
                 }
             }
 
-            // 3. Request blocks
+            // 4. Request blocks
             if !peer.peer_choking && peer.am_interested && peer.inflight_requests < 10 {
                 // Find a block to request
                 // 1. Continue current pieces
@@ -351,7 +495,9 @@ impl DownloadManager {
 
                 if !request_made && peer.inflight_requests < 10 && !endgame {
                     // Start a new piece
-                    if let Some(index) = self.piece_manager.get_next_needed_piece(&peer.have_pieces)
+                    if let Some(index) = self
+                        .piece_manager
+                        .get_next_needed_piece(&peer.have_pieces, &piece_availability)
                     {
                         self.piece_manager.start_downloading(index);
                         // Now try to request from it
@@ -381,6 +527,19 @@ impl DownloadManager {
         // Remove dead peers (in reverse order to maintain indices)
         for i in peers_to_remove.into_iter().rev() {
             self.peers.remove(i);
+        }
+
+        // Broadcast Have messages for completed pieces
+        for piece_index in completed_pieces {
+            self.broadcast_have(piece_index);
+        }
+    }
+
+    fn broadcast_have(&mut self, piece_index: u32) {
+        // Send Have message to all peers
+        let msg = Message::Have { piece_index };
+        for peer in &mut self.peers {
+            let _ = peer.connection.send_message(&msg);
         }
     }
 }
