@@ -10,6 +10,8 @@ pub struct FileManager {
     pub output_dir: PathBuf,
     pub files: Vec<TorrentFile>,
     pub piece_length: u64,
+    pub total_size: u64,
+    pub total_pieces: usize,
 }
 
 impl FileManager {
@@ -18,6 +20,23 @@ impl FileManager {
             output_dir,
             files: torrent_info.files.clone(),
             piece_length: torrent_info.piece_length,
+            total_size: torrent_info.total_size,
+            total_pieces: torrent_info.piece_hashes.len(),
+        }
+    }
+
+    /// Calculate the actual length of a piece (last piece may be smaller)
+    fn get_piece_length(&self, piece_index: usize) -> u64 {
+        if piece_index == self.total_pieces - 1 {
+            // Last piece
+            let remainder = self.total_size % self.piece_length;
+            if remainder == 0 {
+                self.piece_length
+            } else {
+                remainder
+            }
+        } else {
+            self.piece_length
         }
     }
 
@@ -102,10 +121,8 @@ impl FileManager {
 
     /// Reads a full piece from disk for verification.
     pub fn read_piece(&self, piece_index: usize) -> Result<Vec<u8>, std::io::Error> {
-        let piece_len = self.piece_length; // Note: Last piece might be smaller
-                                           // We need to handle last piece size.
-                                           // For now, let's assume standard size and truncate if needed.
-                                           // Or better, calculate exact size.
+        // Calculate the actual length of this piece
+        let piece_len = self.get_piece_length(piece_index);
 
         let mut buffer = vec![0u8; piece_len as usize];
         let global_offset = piece_index as u64 * self.piece_length;
@@ -160,10 +177,6 @@ impl FileManager {
             file_start_offset += file_info.length;
         }
 
-        // Truncate buffer if last piece
-        // Actually, we should calculate expected size first.
-        // But for now, this reads what's available.
-
         Ok(buffer)
     }
 
@@ -173,9 +186,6 @@ impl FileManager {
         expected_hash: &[u8; 20],
     ) -> Result<bool, std::io::Error> {
         let data = self.read_piece(piece_index)?;
-
-        // Handle last piece size mismatch if any (read_piece reads full length)
-        // We should really pass expected length to read_piece.
 
         let mut hasher = Sha1::new();
         hasher.update(&data);

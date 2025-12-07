@@ -116,6 +116,13 @@ impl PieceManager {
             self.downloading_pieces.push(PieceState::new(index, len));
         }
     }
+
+    pub fn reset_piece(&mut self, index: usize) {
+        // Reset piece to missing status so it can be retried
+        self.piece_status[index] = PieceStatus::Missing;
+        // Remove from downloading pieces
+        self.downloading_pieces.retain(|p| p.index != index);
+    }
 }
 
 pub struct ActivePeer {
@@ -126,6 +133,7 @@ pub struct ActivePeer {
     pub am_interested: bool,
     pub have_pieces: Vec<bool>,
     pub inflight_requests: usize,
+    pub requested_blocks: Vec<(u32, u32)>, // (index, begin)
 }
 
 impl ActivePeer {
@@ -138,6 +146,7 @@ impl ActivePeer {
             am_interested: false,
             have_pieces: vec![false; num_pieces],
             inflight_requests: 0,
+            requested_blocks: Vec::new(),
         }
     }
 }
@@ -173,6 +182,11 @@ impl DownloadManager {
 
     pub fn tick(&mut self, file_manager: &FileManager) {
         let mut peers_to_remove = Vec::new();
+        let endgame = self
+            .piece_manager
+            .piece_status
+            .iter()
+            .all(|s| *s != PieceStatus::Missing);
 
         for i in 0..self.peers.len() {
             let peer = &mut self.peers[i];
@@ -212,6 +226,8 @@ impl DownloadManager {
                             block,
                         } => {
                             peer.inflight_requests = peer.inflight_requests.saturating_sub(1);
+                            peer.requested_blocks
+                                .retain(|(i, b)| !(*i == index && *b == begin));
 
                             // Write block
                             if let Err(e) = file_manager.write_block(index as usize, begin, &block)
@@ -242,12 +258,18 @@ impl DownloadManager {
                                         let hash = &self.piece_hashes[index as usize];
                                         match file_manager.verify_piece(index as usize, hash) {
                                             Ok(true) => {
-                                                println!("Piece {} verified!", index);
+                                                if crate::is_debug() {
+                                                    println!("Piece {} verified!", index);
+                                                }
                                                 self.piece_manager.mark_complete(index as usize);
                                             }
                                             Ok(false) => {
-                                                eprintln!("Piece {} verification failed!", index);
-                                                // TODO: Reset piece state to missing to retry
+                                                eprintln!(
+                                                    "Piece {} verification failed! Retrying...",
+                                                    index
+                                                );
+                                                // Reset piece to missing so it can be retried
+                                                self.piece_manager.reset_piece(index as usize);
                                             }
                                             Err(e) => {
                                                 eprintln!("Error verifying piece {}: {}", index, e)
@@ -298,16 +320,26 @@ impl DownloadManager {
                         .unwrap_or(false)
                     {
                         for block in &mut piece_state.blocks {
-                            if !block.downloaded && !block.requested {
-                                if let Ok(_) = peer.connection.send_message(&Message::Request {
-                                    index: block.index,
-                                    begin: block.begin,
-                                    length: block.length,
-                                }) {
-                                    block.requested = true;
-                                    peer.inflight_requests += 1;
-                                    request_made = true;
-                                    break;
+                            // Check if we already asked THIS peer for this block
+                            let already_asked_peer =
+                                peer.requested_blocks.contains(&(block.index, block.begin));
+
+                            if !block.downloaded && !already_asked_peer {
+                                // In normal mode, we request if nobody else requested it (!block.requested).
+                                // In endgame mode, we request even if someone else requested it,
+                                // as long as WE haven't asked THIS peer yet.
+                                if endgame || !block.requested {
+                                    if let Ok(_) = peer.connection.send_message(&Message::Request {
+                                        index: block.index,
+                                        begin: block.begin,
+                                        length: block.length,
+                                    }) {
+                                        block.requested = true;
+                                        peer.inflight_requests += 1;
+                                        peer.requested_blocks.push((block.index, block.begin));
+                                        request_made = true;
+                                        break;
+                                    }
                                 }
                             }
                         }
@@ -317,7 +349,7 @@ impl DownloadManager {
                     }
                 }
 
-                if !request_made && peer.inflight_requests < 5 {
+                if !request_made && peer.inflight_requests < 5 && !endgame {
                     // Start a new piece
                     if let Some(index) = self.piece_manager.get_next_needed_piece(&peer.have_pieces)
                     {
@@ -337,6 +369,7 @@ impl DownloadManager {
                                 }) {
                                     block.requested = true;
                                     peer.inflight_requests += 1;
+                                    peer.requested_blocks.push((block.index, block.begin));
                                 }
                             }
                         }
