@@ -303,7 +303,7 @@ impl DownloadManager {
             }
 
             // 3. Request blocks
-            if !peer.peer_choking && peer.am_interested && peer.inflight_requests < 5 {
+            if !peer.peer_choking && peer.am_interested && peer.inflight_requests < 10 {
                 // Find a block to request
                 // 1. Continue current pieces
                 // 2. Start new piece
@@ -349,7 +349,7 @@ impl DownloadManager {
                     }
                 }
 
-                if !request_made && peer.inflight_requests < 5 && !endgame {
+                if !request_made && peer.inflight_requests < 10 && !endgame {
                     // Start a new piece
                     if let Some(index) = self.piece_manager.get_next_needed_piece(&peer.have_pieces)
                     {

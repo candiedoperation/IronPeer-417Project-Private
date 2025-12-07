@@ -44,7 +44,7 @@ fn main() {
     
     let torrent_path = PathBuf::from(torrent_path);
     let output_dir = PathBuf::from("downloads");
-    const TARGET_PEER_COUNT: usize = 15;
+    const TARGET_PEER_COUNT: usize = 50;
 
     match MetaInfo::from_file(&torrent_path) {
         Ok(meta_info) => {
@@ -115,50 +115,100 @@ fn main() {
             println!("Total unique peers found: {}", all_peers.len());
             println!("Starting download loop...");
             
+            // Create channel for receiving successful connections from background threads
+            let (conn_tx, conn_rx) = std::sync::mpsc::channel();
+            
+            // Spawn initial batch of connection attempts (parallel)
+            let initial_batch_size = std::cmp::min(TARGET_PEER_COUNT * 2, all_peers.len());
+            for i in 0..initial_batch_size {
+                let peer = all_peers[i].clone();
+                let info_hash = torrent_info.info_hash.clone();
+                let peer_id = download_manager.peer_id.clone();
+                let tx = conn_tx.clone();
+                let debug = is_debug();
+                
+                std::thread::spawn(move || {
+                    if debug {
+                        println!("Connecting to {}...", peer.addr);
+                    }
+                    match Handshake::connect_and_handshake(&peer, &info_hash, &peer_id, Duration::from_millis(500)) {
+                        Ok((connection, _)) => {
+                            if debug {
+                                println!("Connected to {}", peer.addr);
+                            }
+                            if let Ok(_) = connection.stream().set_nonblocking(true) {
+                                let _ = tx.send(connection);
+                            }
+                        },
+                        Err(_) => {
+                            if debug {
+                                println!("Failed to connect to {}", peer.addr);
+                            }
+                        }
+                    }
+                });
+            }
+            
             let mut last_log_time = std::time::Instant::now();
-            let mut peer_index = 0;
+            let mut peer_index = initial_batch_size;
             let mut last_downloaded_bytes = 0;
             let mut last_speed_calc_time = std::time::Instant::now();
 
             loop {
-                // 1. Maintain active peer count (non-blocking attempts)
+                // 1. Check for new connections from background threads (non-blocking)
+                while let Ok(connection) = conn_rx.try_recv() {
+                    // Check if already connected by address
+                    let peer_addr = connection.peer().addr;
+                    let already_connected = download_manager.peers.iter()
+                        .any(|p| p.connection.peer().addr == peer_addr);
+                    
+                    if !already_connected {
+                        download_manager.add_peer(connection);
+                    }
+                }
+                
+                // 2. Spawn more connection attempts if needed
                 let active_count = download_manager.peers.len();
-                if active_count < TARGET_PEER_COUNT {
-                    // Try to connect to one more peer per tick if needed, to avoid blocking too long
-                    if peer_index < all_peers.len() {
-                        let peer = &all_peers[peer_index];
+                if active_count < TARGET_PEER_COUNT && peer_index < all_peers.len() {
+                    // Spawn a few more connection attempts in parallel
+                    let batch_size = std::cmp::min(5, all_peers.len() - peer_index);
+                    for _ in 0..batch_size {
+                        if peer_index >= all_peers.len() {
+                            break;
+                        }
+                        
+                        let peer = all_peers[peer_index].clone();
                         peer_index += 1;
                         
-                        // Check if already connected (simple check by address)
-                        let already_connected = download_manager.peers.iter().any(|p| p.connection.peer().addr == peer.addr);
-                        if !already_connected {
-                            if is_debug() {
+                        let info_hash = torrent_info.info_hash.clone();
+                        let peer_id = download_manager.peer_id.clone();
+                        let tx = conn_tx.clone();
+                        let debug = is_debug();
+                        
+                        std::thread::spawn(move || {
+                            if debug {
                                 println!("Connecting to {}...", peer.addr);
                             }
-                            // Use a shorter timeout for the connect attempt to keep the loop moving
-                            match Handshake::connect_and_handshake(peer, &torrent_info.info_hash, &download_manager.peer_id, Duration::from_secs(1)) {
+                            match Handshake::connect_and_handshake(&peer, &info_hash, &peer_id, Duration::from_millis(500)) {
                                 Ok((connection, _)) => {
-                                    if is_debug() {
+                                    if debug {
                                         println!("Connected to {}", peer.addr);
                                     }
                                     if let Ok(_) = connection.stream().set_nonblocking(true) {
-                                        download_manager.add_peer(connection);
+                                        let _ = tx.send(connection);
                                     }
                                 },
                                 Err(_) => {
-                                    if is_debug() {
+                                    if debug {
                                         println!("Failed to connect to {}", peer.addr);
                                     }
                                 }
                             }
-                        }
-                    } else {
-                        // Reset index if we reached the end
-                        peer_index = 0;
+                        });
                     }
                 }
 
-                // 2. Tick download manager
+                // 3. Tick download manager
                 download_manager.tick(&file_manager);
                 
                 // 3. Check completion
